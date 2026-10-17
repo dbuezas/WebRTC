@@ -569,17 +569,6 @@ class WebRTCCamera extends VideoRTC {
             this.addEventListener('fullscreenchange', () => {
                 fullscreen.icon = document.fullscreenElement ? 'mdi:fullscreen-exit' : 'mdi:fullscreen';
             });
-            // In fullscreen the card is still inside its dashboard: keep its touches from reaching it, or a
-            // drag on the video is taken as a swipe by the pop-up behind it, which closes (and ends the fullscreen)
-            const keepTouches = ev => {
-                // document.fullscreenElement is the outermost shadow host (home-assistant), not this card
-                if (this.matches(':fullscreen')) ev.stopPropagation();
-            };
-            // Only presses and moves (which start a swipe): the card's own controls run first anyway, and
-            // releases must still reach the window, where the PTZ buttons and the digital PTZ wait for them
-            for (const type of ['touchstart', 'touchmove', 'pointerdown', 'pointermove', 'mousedown', 'mousemove']) {
-                this.addEventListener(type, keepTouches);
-            }
         } else if (video.webkitEnterFullscreen) {
             this.requestFullscreen = () => new Promise((resolve, reject) => {
                 try {
