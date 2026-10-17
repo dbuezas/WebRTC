@@ -575,7 +575,9 @@ class WebRTCCamera extends VideoRTC {
                 // document.fullscreenElement is the outermost shadow host (home-assistant), not this card
                 if (this.matches(':fullscreen')) ev.stopPropagation();
             };
-            for (const type of ['touchstart', 'touchmove', 'touchend', 'pointerdown', 'pointermove', 'pointerup', 'mousedown', 'mousemove', 'mouseup']) {
+            // Only presses and moves (which start a swipe): the card's own controls run first anyway, and
+            // releases must still reach the window, where the PTZ buttons and the digital PTZ wait for them
+            for (const type of ['touchstart', 'touchmove', 'pointerdown', 'pointermove', 'mousedown', 'mousemove']) {
                 this.addEventListener(type, keepTouches);
             }
         } else if (video.webkitEnterFullscreen) {
