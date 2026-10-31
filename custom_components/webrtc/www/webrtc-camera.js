@@ -37,6 +37,7 @@ class WebRTCCamera extends VideoRTC {
          *     fullscreen: string,
          *     intersection: number,
          *     ui: boolean,
+         *     live_indicator: boolean,
          *     style: string,
          *     background: boolean,
          *
@@ -180,6 +181,7 @@ class WebRTCCamera extends VideoRTC {
         this.renderPTZ();
         this.renderCustomUI();
         this.renderShortcuts();
+        this.renderLiveIndicator();
         this.renderStyle();
     }
 
@@ -216,6 +218,12 @@ class WebRTCCamera extends VideoRTC {
 
             if (super.onconnect()) {
                 this.setStatus('Loading...');
+                // after the video was cleared, the wait for a picture counts from now
+                if (this.liveCleared !== false) {
+                    this.liveCleared = false;
+                    this.liveSeen = false;
+                    this.liveFrameTS = Date.now();
+                }
             } else {
                 this.setStatus('error', 'unable to connect');
             }
@@ -250,6 +258,21 @@ class WebRTCCamera extends VideoRTC {
         if (this.pcState !== WebSocket.CLOSED) {
             this.setStatus('RTC', this.config.title || '');
         }
+    }
+
+    ondisconnect() {
+        super.ondisconnect();
+        this.liveCleared = true;
+    }
+
+    onmjpeg() {
+        super.onmjpeg();
+        // MJPEG frames are shown as the poster, not as video frames
+        const ondata = this.ondata;
+        this.ondata = data => {
+            this.liveFrame();
+            ondata(data);
+        };
     }
 
     renderMain() {
@@ -699,6 +722,109 @@ class WebRTCCamera extends VideoRTC {
                 shortcuts.innerHTML = innerHTML;
             }
         });
+    }
+
+    liveFrame() {
+        this.liveSeen = true;
+        this.liveFrameTS = Date.now();
+    }
+
+    /**
+     * A frozen picture looks the same as a live one (e.g. a sleeping baby), so with `live_indicator: true`
+     * the card shows whether new frames are arriving: a blinking green dot and LIVE while they are,
+     * and a red dot, the age of the picture and a big NOT LIVE when none came for a second.
+     * Until the first frame of a connection it shows NOT LIVE, counting from the moment of opening.
+     */
+    renderLiveIndicator() {
+        if (!this.config.live_indicator) return;
+
+        const card = this.querySelector('.card');
+        card.insertAdjacentHTML('beforebegin', `
+            <style>
+                .live-badge {
+                    position: absolute;
+                    left: 10px;
+                    bottom: ${this.config.ui ? '40px' : '50px'};
+                    display: flex;
+                    align-items: center;
+                    gap: 6px;
+                    color: #3bd16f;
+                    font-weight: bold;
+                    text-shadow: 0 0 4px black;
+                    pointer-events: none;
+                }
+                .live-dot {
+                    width: 10px;
+                    height: 10px;
+                    border-radius: 50%;
+                    background: currentColor;
+                    box-shadow: 0 0 4px black;
+                    animation: live-blink 2s step-end infinite;
+                }
+                @keyframes live-blink {
+                    50% { opacity: 0; }
+                }
+                .not-live-banner {
+                    position: absolute;
+                    top: 50%;
+                    left: 50%;
+                    transform: translate(-50%, -50%);
+                    padding: 0.3em 0.8em;
+                    background: rgba(0, 0, 0, 0.8);
+                    color: #ff4040;
+                    font-size: 2em;
+                    font-weight: bold;
+                    white-space: nowrap;
+                    pointer-events: none;
+                }
+                .not-live .live-badge {
+                    color: #ff4040;
+                }
+                .not-live .live-dot {
+                    animation: none;
+                }
+                .live .live-text-age, .not-live .live-text-live, .live .not-live-banner {
+                    display: none;
+                }
+            </style>
+        `);
+        card.insertAdjacentHTML('beforeend', `
+            <div class="live-badge">
+                <div class="live-dot"></div>
+                <span class="live-text-live">LIVE</span>
+                <span class="live-text-age"></span>
+            </div>
+            <div class="not-live-banner">NOT LIVE</div>
+        `);
+
+        // every presented frame, whatever the mode (WebRTC, MSE, HLS)
+        if ('requestVideoFrameCallback' in this.video) {
+            const onframe = () => {
+                this.liveFrame();
+                this.video.requestVideoFrameCallback(onframe);
+            };
+            this.video.requestVideoFrameCallback(onframe);
+        }
+
+        card.classList.add('not-live');
+        const age = this.querySelector('.live-text-age');
+        let lastTotal = 0;
+        setInterval(() => {
+            if (document.hidden) return;
+
+            // older browsers: any change of the decoded frame count is a new frame
+            if (!('requestVideoFrameCallback' in this.video) && this.video.getVideoPlaybackQuality) {
+                const total = this.video.getVideoPlaybackQuality().totalVideoFrames;
+                if (total > 0 && total !== lastTotal) this.liveFrame();
+                lastTotal = total;
+            }
+
+            const ms = Date.now() - (this.liveFrameTS || Date.now());
+            const live = this.liveSeen && ms < 1000;
+            card.classList.toggle('live', live);
+            card.classList.toggle('not-live', !live);
+            age.innerText = (ms / 1000).toFixed(1) + 's';
+        }, 100);
     }
 
     renderStyle() {
