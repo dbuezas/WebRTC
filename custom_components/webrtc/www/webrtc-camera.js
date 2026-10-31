@@ -755,9 +755,10 @@ class WebRTCCamera extends VideoRTC {
                     gap: 6px;
                     color: #3bd16f;
                     font-weight: bold;
-                    padding: 2px 8px;
-                    border-radius: 12px;
-                    background: rgba(0, 0, 0, 0.5);
+                    padding: 3px 10px;
+                    border-radius: 14px;
+                    background: rgba(0, 0, 0, 0.75);
+                    font-size: 15px;
                     white-space: nowrap;
                     pointer-events: none;
                 }
