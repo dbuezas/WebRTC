@@ -755,7 +755,9 @@ class WebRTCCamera extends VideoRTC {
                     gap: 6px;
                     color: #3bd16f;
                     font-weight: bold;
-                    text-shadow: 0 0 4px black;
+                    padding: 2px 8px;
+                    border-radius: 12px;
+                    background: rgba(0, 0, 0, 0.5);
                     white-space: nowrap;
                     pointer-events: none;
                 }
@@ -768,7 +770,6 @@ class WebRTCCamera extends VideoRTC {
                     height: 10px;
                     border-radius: 50%;
                     background: currentColor;
-                    box-shadow: 0 0 4px black;
                     animation: live-blink 2s step-end infinite;
                 }
                 @keyframes live-blink {
