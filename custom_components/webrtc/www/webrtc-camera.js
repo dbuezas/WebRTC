@@ -732,8 +732,13 @@ class WebRTCCamera extends VideoRTC {
     /**
      * A frozen picture looks the same as a live one (e.g. a sleeping baby), so with `live_indicator: true`
      * the card shows whether new frames are arriving: a blinking green dot and LIVE while they are,
-     * and a red dot, the age of the picture and a big NOT LIVE when none came for a second.
+     * and a red dot and a big NOT LIVE when none came for a second.
      * Until the first frame of a connection it shows NOT LIVE, counting from the moment of opening.
+     *
+     * Beside it, how far the picture on screen is behind: video received but not shown yet (the receive
+     * buffer) plus video that has not arrived (the time since the last frame, beyond the normal gap
+     * between frames). While the stream is healthy this is the buffer; when it breaks, it keeps counting
+     * up and says how old the frozen picture is.
      */
     renderLiveIndicator() {
         if (!this.config.live_indicator) return;
@@ -744,14 +749,19 @@ class WebRTCCamera extends VideoRTC {
                 .live-badge {
                     position: absolute;
                     left: 10px;
-                    bottom: ${this.config.ui ? '40px' : '50px'};
+                    bottom: 50px; /* above the browser's own controls */
                     display: flex;
                     align-items: center;
                     gap: 6px;
                     color: #3bd16f;
                     font-weight: bold;
                     text-shadow: 0 0 4px black;
+                    white-space: nowrap;
                     pointer-events: none;
+                }
+                .controls .live-badge {
+                    position: static;
+                    margin-left: 8px;
                 }
                 .live-dot {
                     width: 10px;
@@ -783,7 +793,7 @@ class WebRTCCamera extends VideoRTC {
                 .not-live .live-dot {
                     animation: none;
                 }
-                .live .live-text-age, .not-live .live-text-live, .live .not-live-banner {
+                .not-live .live-text-live, .live .not-live-banner {
                     display: none;
                 }
             </style>
@@ -792,10 +802,13 @@ class WebRTCCamera extends VideoRTC {
             <div class="live-badge">
                 <div class="live-dot"></div>
                 <span class="live-text-live">LIVE</span>
-                <span class="live-text-age"></span>
+                <span class="live-delay"></span>
             </div>
             <div class="not-live-banner">NOT LIVE</div>
         `);
+        // with the custom controls, sit in their bar, right of the buttons on the left
+        const space = this.querySelector('.controls .space');
+        if (space) space.insertAdjacentElement('beforebegin', this.querySelector('.live-badge'));
 
         // every presented frame, whatever the mode (WebRTC, MSE, HLS)
         if ('requestVideoFrameCallback' in this.video) {
@@ -807,8 +820,10 @@ class WebRTCCamera extends VideoRTC {
         }
 
         card.classList.add('not-live');
-        const age = this.querySelector('.live-text-age');
+        const delay = this.querySelector('.live-delay');
         let lastTotal = 0;
+        let buffer = -1;
+        let prev = null;
         setInterval(() => {
             if (document.hidden) return;
 
@@ -819,11 +834,38 @@ class WebRTCCamera extends VideoRTC {
                 lastTotal = total;
             }
 
+            const pc = this.pc;
+            if (pc && this.video.srcObject instanceof MediaStream) {
+                // WebRTC: the jitter buffer wait of the frames since the last look. The totals are averages
+                // over the whole connection, which hide the buffer as it is now. A new peer connection
+                // starts its totals again, so the baseline starts again with it.
+                pc.getStats().then(stats => stats.forEach(r => {
+                    if (r.type !== 'inbound-rtp' || r.kind !== 'video' || !r.jitterBufferEmittedCount) return;
+                    const cur = {pc: pc, delay: r.jitterBufferDelay, count: r.jitterBufferEmittedCount};
+                    if (!prev || prev.pc !== pc || cur.count < prev.count) {
+                        buffer = -1;
+                        prev = cur;
+                    } else if (cur.count > prev.count) {
+                        const now = (cur.delay - prev.delay) / (cur.count - prev.count);
+                        buffer = buffer < 0 ? now : buffer * 0.7 + now * 0.3;
+                        prev = cur;
+                    }
+                }));
+            } else {
+                // MSE, HLS: video downloaded but not played yet
+                const b = this.video.buffered;
+                buffer = b.length ? Math.max(0, b.end(b.length - 1) - this.video.currentTime) : 0;
+                prev = null;
+            }
+
             const ms = Date.now() - (this.liveFrameTS || Date.now());
             const live = this.liveSeen && ms < 1000;
             card.classList.toggle('live', live);
             card.classList.toggle('not-live', !live);
-            age.innerText = (ms / 1000).toFixed(1) + 's';
+            // the camera sends ~10-30 frames a second and this looks 10 times a second, so a healthy
+            // stream is usually a fraction of a second past its last frame: only the part beyond is late
+            const late = Math.max(0, ms - 250) / 1000;
+            delay.innerText = ((this.liveSeen ? Math.max(0, buffer) : 0) + late).toFixed(2) + 's';
         }, 100);
     }
 
