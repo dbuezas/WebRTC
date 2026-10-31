@@ -749,7 +749,7 @@ class WebRTCCamera extends VideoRTC {
                 .live-badge {
                     position: absolute;
                     left: 10px;
-                    bottom: 50px; /* above the browser's own controls */
+                    bottom: 5px; /* the row of the custom controls, which may be off */
                     display: flex;
                     align-items: center;
                     gap: 6px;
